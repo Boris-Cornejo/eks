@@ -35,29 +35,37 @@ locals {
   subnet_ids = var.create_vpc ? module.vpc[0].private_subnets : var.subnet_ids
 }
 
-# Optionally create a security group
-resource "aws_security_group" "rds" {
-  count  = var.create_vpc && length(var.security_group_ids) == 0 ? 1 : 0
-  name   = "mssql-rds-sg"
-  vpc_id = local.vpc_id
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
 
-  ingress {
-    from_port   = 1433
-    to_port     = 1433
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Restrict as needed!
-  }
+  name        = var.db_identifier
+  description = "SQL Server RDS security group"
+  vpc_id      = local.vpc_id
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 1433
+      to_port     = 1433
+      protocol    = "tcp"
+      description = "SQL Server access from within VPC"
+      cidr_blocks = var.create_vpc ? module.vpc[0].vpc_cidr_block : var.vpc_cidr_block
+    },
+  ]
 
-locals {
-  rds_sg_ids = var.create_vpc && length(var.security_group_ids) == 0 ? [aws_security_group.rds[0].id] : var.security_group_ids
+  # If you have Directory Service, add egress as in the example.
+  # Otherwise, allow all egress:
+  egress_with_cidr_blocks = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      description = "Allow all outbound traffic"
+      cidr_blocks = ["0.0.0.0/0"]
+    },
+  ]
+
+  tags = var.tags
 }
 
 module "db" {
